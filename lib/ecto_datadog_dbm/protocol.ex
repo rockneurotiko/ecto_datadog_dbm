@@ -5,6 +5,10 @@ defmodule EctoDatadogDbm.Protocol do
   Unnamed statements get a per-call comment with the caller's trace context;
   named statements keep the static comment, since their text is sent only once.
 
+  `COMMIT` carries the static comment through Postgrex's `:commit_comment` option
+  (a traceparent is not added: a transaction has no statement of its own to link).
+  `BEGIN` and `ROLLBACK` stay unprefixed because Postgrex offers no comment hook for them.
+
   The connection state is `{{config, comment}, postgrex_state}`. The comment is prepended
   to the statement sent to the server, and the original statement is restored on
   returned queries and `Postgrex.Error` structs so caches, telemetry and error
@@ -37,7 +41,10 @@ defmodule EctoDatadogDbm.Protocol do
   def handle_begin(opts, {comment, state}), do: wrap(@pg.handle_begin(opts, state), comment)
 
   @impl true
-  def handle_commit(opts, {comment, state}), do: wrap(@pg.handle_commit(opts, state), comment)
+  def handle_commit(opts, {{_config, static} = dbm, state}) do
+    opts = put_commit_comment(opts, static)
+    wrap(@pg.handle_commit(opts, state), dbm)
+  end
 
   @impl true
   def handle_rollback(opts, {comment, state}),
@@ -81,6 +88,13 @@ defmodule EctoDatadogDbm.Protocol do
   @impl true
   def handle_deallocate(query, cursor, opts, {comment, state}),
     do: wrap(@pg.handle_deallocate(query, cursor, opts, state), comment)
+
+  # Postgrex builds `/* comment */\nCOMMIT` itself and wants the bare comment text.
+  # The static comment is percent-encoded, so it never contains `*/`.
+  defp put_commit_comment(opts, "/*" <> _ = static),
+    do: Keyword.put(opts, :commit_comment, binary_part(static, 2, byte_size(static) - 4))
+
+  defp put_commit_comment(opts, _static), do: opts
 
   defp with_comment(%{statement: statement} = query, {config, static}),
     do: %{query | statement: Comment.prefix(statement, comment_for(query, config, static))}
