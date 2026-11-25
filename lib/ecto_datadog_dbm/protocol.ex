@@ -1,6 +1,6 @@
 defmodule EctoDatadogDbm.Protocol do
   @moduledoc """
-  `DBConnection` callback module wrapping `Postgrex.Protocol`.
+  `DBConnection` callback module wrapping the Postgrex protocol module.
 
   Unnamed statements get a per-call comment with the caller's trace context;
   named statements keep the static comment, since their text is sent only once.

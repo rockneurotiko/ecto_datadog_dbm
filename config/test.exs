@@ -6,7 +6,10 @@ url =
     "postgres://postgres:postgres@localhost/ecto_datadog_dbm_test"
   )
 
-config :ecto_datadog_dbm, EctoDatadogDbm.Test.PlainRepo, url: url, pool_size: 2
+config :ecto_datadog_dbm, EctoDatadogDbm.Test.PlainRepo,
+  url: url,
+  pool_size: 2,
+  dbm: [mode: :full, dddbs: "test-db", ddps: "test-app"]
 
 config :ecto_datadog_dbm, EctoDatadogDbm.Test.DisabledRepo,
   url: url,

@@ -2,7 +2,7 @@ defmodule EctoDatadogDbm.Pool do
   @moduledoc """
   Connection pool for the Repo `:pool` option.
 
-  Delegates to `DBConnection.ConnectionPool`, swapping `Postgrex.Protocol` for
+  Delegates to `DBConnection.ConnectionPool`, swapping the Postgrex protocol module for
   `EctoDatadogDbm.Protocol`.
   """
 

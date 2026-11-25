@@ -18,7 +18,10 @@ defmodule EctoDatadogDbm.TraceparentTest do
 
   defp current_query, do: from(c in "pg_class", select: fragment("current_query()"), limit: 1)
 
-  defp server_text(run), do: run.() |> then(fn {:ok, %{rows: [[sql]]}} -> sql end)
+  defp server_text(run) do
+    {:ok, %{rows: [[sql]]}} = run.()
+    sql
+  end
 
   defp unnamed_variants do
     [

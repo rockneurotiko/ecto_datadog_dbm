@@ -80,13 +80,13 @@ COMMIT"
       Repo.transaction(fn -> Repo.rollback(:nope) end)
       assert last_query(pid) == "ROLLBACK"
 
-      Multi.new()
-      |> Multi.insert(:item, %Item{name: "m"})
-      |> Multi.run(:seen, fn _, _ -> {:ok, last_query(pid)} end)
-      |> Repo.transaction()
-      |> then(fn {:ok, %{seen: seen}} ->
-        assert seen =~ ~s(#{@comment} INSERT INTO "dbm_items")
-      end)
+      multi =
+        Multi.new()
+        |> Multi.insert(:item, %Item{name: "m"})
+        |> Multi.run(:seen, fn _, _ -> {:ok, last_query(pid)} end)
+
+      {:ok, %{seen: seen}} = Repo.transaction(multi)
+      assert seen =~ ~s(#{@comment} INSERT INTO "dbm_items")
 
       assert last_query(pid) == "/* #{@inner} */\nCOMMIT"
     end)

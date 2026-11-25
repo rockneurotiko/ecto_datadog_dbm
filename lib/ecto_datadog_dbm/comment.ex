@@ -42,10 +42,19 @@ defmodule EctoDatadogDbm.Comment do
 
   defp tags(config), do: Enum.map(Config.tag_keys(), &{&1, Map.fetch!(config, &1)})
 
-  @doc "Prepends the comment to a statement; nil, empty and unusable input pass through."
+  @doc "Prepends the comment to a statement; empty, `nil` and non-iodata input pass through."
   @spec prefix(iodata() | nil, String.t()) :: iodata() | nil
-  def prefix(statement, comment) when statement in [nil, "", []] or comment == "", do: statement
-  def prefix(statement, comment), do: [comment, " ", statement]
+  def prefix(statement, ""), do: statement
+
+  def prefix(statement, comment),
+    do: if(blank?(statement), do: statement, else: [comment, " ", statement])
+
+  # IO.iodata_length/1 raises on anything that is not valid iodata.
+  defp blank?(statement) do
+    IO.iodata_length(statement) == 0
+  rescue
+    ArgumentError -> true
+  end
 
   defp encode(value), do: value |> to_string() |> URI.encode(&unreserved?/1)
 
