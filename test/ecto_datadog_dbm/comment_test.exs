@@ -1,7 +1,12 @@
 defmodule EctoDatadogDbm.CommentTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias EctoDatadogDbm.{Comment, Config}
+  alias EctoDatadogDbm.Test.Env
+
+  setup do
+    Env.clear!()
+  end
 
   test "sorted, single-quoted, comma separated, nil and empty skipped" do
     config = Config.new!(ddpv: "1.0", dddbs: "svc", dde: "prod", ddh: "", dddb: nil, ddps: "app")

@@ -2,7 +2,7 @@ defmodule EctoDatadogDbm.Test.Postgres do
   @moduledoc false
 
   alias Ecto.Adapters.Postgres
-  alias EctoDatadogDbm.Test.Repo
+  alias EctoDatadogDbm.Test.{DisabledRepo, PlainRepo, Repo}
 
   @doc "Creates the test database when missing and starts the non-sandbox Repo."
   def start! do
@@ -12,7 +12,7 @@ defmodule EctoDatadogDbm.Test.Postgres do
       {:error, reason} -> raise "cannot create test database: #{inspect(reason)}"
     end
 
-    {:ok, _} = Repo.start_link()
+    for repo <- [Repo, DisabledRepo, PlainRepo], do: {:ok, _} = repo.start_link()
     :ok
   end
 end

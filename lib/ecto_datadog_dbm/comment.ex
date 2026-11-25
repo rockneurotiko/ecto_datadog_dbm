@@ -8,15 +8,19 @@ defmodule EctoDatadogDbm.Comment do
   @doc """
   Builds the comment text, or `""` when no key has a value.
 
+  Only the tag keys are used. Returns `""` when the mode is `:disabled`.
   Keys are sorted, nil/empty values skipped, and every character outside
   `[A-Za-z0-9_.~-]` is percent-encoded so a value can never close the comment.
   The trace context and options are accepted for forward compatibility and
   are currently ignored.
   """
   @spec build(Config.t(), map() | nil, keyword()) :: String.t()
-  def build(%Config{} = config, _ctx \\ nil, _opts \\ []) do
+  def build(config, ctx \\ nil, opts \\ [])
+  def build(%Config{mode: :disabled}, _ctx, _opts), do: ""
+
+  def build(%Config{} = config, _ctx, _opts) do
     config
-    |> Map.from_struct()
+    |> tags()
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Enum.sort()
     |> Enum.map_join(",", fn {key, value} -> "#{key}='#{encode(value)}'" end)
@@ -25,6 +29,8 @@ defmodule EctoDatadogDbm.Comment do
       body -> "/*" <> body <> "*/"
     end
   end
+
+  defp tags(config), do: Enum.map(Config.tag_keys(), &{&1, Map.fetch!(config, &1)})
 
   @doc "Prepends the comment to a statement; nil, empty and unusable input pass through."
   @spec prefix(iodata() | nil, String.t()) :: iodata() | nil

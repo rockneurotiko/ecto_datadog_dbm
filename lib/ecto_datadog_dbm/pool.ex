@@ -8,8 +8,20 @@ defmodule EctoDatadogDbm.Pool do
 
   @behaviour DBConnection.Pool
 
+  alias EctoDatadogDbm.{Comment, Config}
+
+  def child_spec({Postgrex.Protocol, %DBConnection.SensitiveData{data: opts}}) do
+    child_spec({Postgrex.Protocol, opts})
+  end
+
   def child_spec({Postgrex.Protocol, opts}) do
-    DBConnection.ConnectionPool.child_spec({EctoDatadogDbm.Protocol, opts})
+    dbm = Keyword.get(opts, :dbm) || raise ArgumentError, "the :dbm configuration is required"
+    config = Config.new!(dbm)
+    opts = Keyword.merge(opts, dbm: config, dbm_comment: Comment.build(config))
+
+    DBConnection.ConnectionPool.child_spec(
+      {EctoDatadogDbm.Protocol, %DBConnection.SensitiveData{data: opts}}
+    )
   end
 
   def child_spec({module, _opts}) do

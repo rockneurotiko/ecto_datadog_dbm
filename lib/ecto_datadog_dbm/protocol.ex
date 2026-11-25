@@ -10,14 +10,13 @@ defmodule EctoDatadogDbm.Protocol do
 
   @behaviour DBConnection
 
-  alias EctoDatadogDbm.{Comment, Config}
+  alias EctoDatadogDbm.Comment
 
   @pg Postgrex.Protocol
 
   @impl true
   def connect(opts) do
-    dbm = Keyword.get(opts, :dbm) || raise ArgumentError, "the :dbm configuration is required"
-    comment = dbm |> Config.new!() |> Comment.build()
+    comment = Keyword.fetch!(opts, :dbm_comment)
 
     with {:ok, state} <- @pg.connect(opts), do: {:ok, {comment, state}}
   end
