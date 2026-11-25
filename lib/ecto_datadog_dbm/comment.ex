@@ -8,19 +8,20 @@ defmodule EctoDatadogDbm.Comment do
   @doc """
   Builds the comment text, or `""` when no key has a value.
 
-  Only the tag keys are used. Returns `""` when the mode is `:disabled`.
+  Returns `""` when the mode is `:disabled`. In `:full` mode a trace context
+  given for an unnamed statement (`named?: false`) adds a `traceparent` key;
+  named statements only get the static tags, as their text is sent once.
   Keys are sorted, nil/empty values skipped, and every character outside
   `[A-Za-z0-9_.~-]` is percent-encoded so a value can never close the comment.
-  The trace context and options are accepted for forward compatibility and
-  are currently ignored.
   """
   @spec build(Config.t(), map() | nil, keyword()) :: String.t()
   def build(config, ctx \\ nil, opts \\ [])
   def build(%Config{mode: :disabled}, _ctx, _opts), do: ""
 
-  def build(%Config{} = config, _ctx, _opts) do
+  def build(%Config{} = config, ctx, opts) do
     config
     |> tags()
+    |> add_traceparent(config, ctx, opts)
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Enum.sort()
     |> Enum.map_join(",", fn {key, value} -> "#{key}='#{encode(value)}'" end)
@@ -29,6 +30,15 @@ defmodule EctoDatadogDbm.Comment do
       body -> "/*" <> body <> "*/"
     end
   end
+
+  defp add_traceparent(tags, %Config{mode: :full}, %{} = ctx, opts) do
+    if Keyword.get(opts, :named?, true), do: tags, else: [{:traceparent, traceparent(ctx)} | tags]
+  end
+
+  defp add_traceparent(tags, _config, _ctx, _opts), do: tags
+
+  defp traceparent(%{trace_id: trace_id, span_id: span_id, sampled?: sampled?}),
+    do: "00-#{trace_id}-#{span_id}-#{if sampled?, do: "01", else: "00"}"
 
   defp tags(config), do: Enum.map(Config.tag_keys(), &{&1, Map.fetch!(config, &1)})
 

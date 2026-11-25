@@ -40,6 +40,8 @@ defmodule EctoDatadogDbm.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:db_connection, ">= 0.0.0"},
       {:opentelemetry_api, "~> 1.4", optional: true},
+      {:opentelemetry, "~> 1.5", only: :test},
+      {:opentelemetry_process_propagator, "~> 0.3", only: :test},
       {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

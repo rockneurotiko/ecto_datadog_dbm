@@ -2,7 +2,10 @@ defmodule EctoDatadogDbm.Protocol do
   @moduledoc """
   `DBConnection` callback module wrapping `Postgrex.Protocol`.
 
-  The connection state is `{comment, postgrex_state}`. The comment is prepended
+  Unnamed statements get a per-call comment with the caller's trace context;
+  named statements keep the static comment, since their text is sent only once.
+
+  The connection state is `{{config, comment}, postgrex_state}`. The comment is prepended
   to the statement sent to the server, and the original statement is restored on
   returned queries and `Postgrex.Error` structs so caches, telemetry and error
   reports keep seeing the SQL as written.
@@ -16,9 +19,9 @@ defmodule EctoDatadogDbm.Protocol do
 
   @impl true
   def connect(opts) do
-    comment = Keyword.fetch!(opts, :dbm_comment)
+    dbm = {Keyword.fetch!(opts, :dbm), Keyword.fetch!(opts, :dbm_comment)}
 
-    with {:ok, state} <- @pg.connect(opts), do: {:ok, {comment, state}}
+    with {:ok, state} <- @pg.connect(opts), do: {:ok, {dbm, state}}
   end
 
   @impl true
@@ -79,10 +82,24 @@ defmodule EctoDatadogDbm.Protocol do
   def handle_deallocate(query, cursor, opts, {comment, state}),
     do: wrap(@pg.handle_deallocate(query, cursor, opts, state), comment)
 
-  defp with_comment(%{statement: statement} = query, comment),
-    do: %{query | statement: Comment.prefix(statement, comment)}
+  defp with_comment(%{statement: statement} = query, {config, static}),
+    do: %{query | statement: Comment.prefix(statement, comment_for(query, config, static))}
 
   defp with_comment(query, _comment), do: query
+
+  defp comment_for(query, %{mode: :full, trace_context: trace_context} = config, static) do
+    with true <- unnamed?(query), {:ok, ctx} <- trace_context.current() do
+      Comment.build(config, ctx, named?: false)
+    else
+      _ -> static
+    end
+  end
+
+  defp comment_for(_query, _config, static), do: static
+
+  defp unnamed?(%Postgrex.TextQuery{}), do: true
+  defp unnamed?(%Postgrex.Query{name: ""}), do: true
+  defp unnamed?(_query), do: false
 
   defp restore(result, original, comment) do
     result

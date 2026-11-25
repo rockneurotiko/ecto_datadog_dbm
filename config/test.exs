@@ -19,9 +19,12 @@ config :ecto_datadog_dbm, EctoDatadogDbm.Test.Repo,
   pool: EctoDatadogDbm.Pool,
   pool_size: 2,
   dbm: [
-    mode: :service,
+    mode: :full,
     dddbs: "test-db",
     dde: "test",
     ddps: "test-app",
     ddpv: "1.0.0"
   ]
+
+config :opentelemetry, traces_exporter: :none, processors: []
+config :logger, level: :warning
