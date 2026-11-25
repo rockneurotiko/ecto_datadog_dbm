@@ -10,6 +10,7 @@ defmodule EctoDatadogDbm.MixProject do
       version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: "Datadog Database Monitoring to APM trace linking for Ecto and Postgres",
       package: package(),
@@ -21,6 +22,9 @@ defmodule EctoDatadogDbm.MixProject do
   def application do
     [extra_applications: [:logger]]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp package do
     [
