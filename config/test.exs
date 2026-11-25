@@ -26,5 +26,20 @@ config :ecto_datadog_dbm, EctoDatadogDbm.Test.Repo,
     ddpv: "1.0.0"
   ]
 
+for {repo, policy} <- [SampledRepo: :sampled, AlwaysRepo: :always] do
+  config :ecto_datadog_dbm, Module.concat(EctoDatadogDbm.Test, repo),
+    url: url,
+    pool: EctoDatadogDbm.Pool,
+    pool_size: 1,
+    dbm: [
+      mode: :full,
+      dddbs: "test-db",
+      dde: "test",
+      ddps: "test-app",
+      ddpv: "1.0.0",
+      traceparent: policy
+    ]
+end
+
 config :opentelemetry, traces_exporter: :none, processors: []
 config :logger, level: :warning

@@ -4,6 +4,18 @@ defmodule EctoDatadogDbm.Protocol do
 
   Unnamed statements get a per-call comment with the caller's trace context;
   named statements keep the static comment, since their text is sent only once.
+  Under the `:sampled` and `:always` traceparent policies a named statement is executed
+  as an unnamed copy with the full comment (for `:sampled` only in a sampled trace), and
+  the original named query is returned, so the named prepared statement is neither
+  re-parsed nor replaced and Ecto's cache entry stays valid. A statement that was just
+  prepared in the same call and still holds the connection locked (e.g. the first
+  `insert_all` of a shape) keeps the static comment for that run.
+
+  The lock check (`locked?/1`) relies on Postgrex's internal connection state shape
+  (`postgres: {status, ref}`, verified against the installed Postgrex). If that shape
+  changed, the first execution of a freshly prepared statement would fail, so the test
+  that runs the first `insert_all` of a shape inside a transaction under `:sampled` and
+  `:always` must stay.
 
   `COMMIT` carries the static comment through Postgrex's `:commit_comment` option
   (a traceparent is not added: a transaction has no statement of its own to link).
@@ -63,18 +75,12 @@ defmodule EctoDatadogDbm.Protocol do
 
   @impl true
   def handle_execute(query, params, opts, {comment, state}) do
-    query
-    |> with_comment(comment)
-    |> @pg.handle_execute(params, opts, state)
-    |> restore(query, comment)
+    run(query, comment, state, &@pg.handle_execute(&1, params, opts, state))
   end
 
   @impl true
   def handle_declare(query, params, opts, {comment, state}) do
-    query
-    |> with_comment(comment)
-    |> @pg.handle_declare(params, opts, state)
-    |> restore(query, comment)
+    run(query, comment, state, &@pg.handle_declare(&1, params, opts, state))
   end
 
   @impl true
@@ -111,19 +117,60 @@ defmodule EctoDatadogDbm.Protocol do
 
   defp comment_for(_query, _config, static), do: static
 
+  # Executes `fun` with the query to send. A named query that must carry a traceparent
+  # (`:sampled` and `:always` policies) is sent as an unnamed copy, so the named prepared
+  # statement is neither re-parsed nor replaced, and the original struct is returned.
+  # A freshly prepared named query leaves the connection locked to it until it is executed
+  # (`postgres: {status, ref}`), so that first execution keeps the static comment.
+  defp run(query, {config, _static} = comment, state, fun) do
+    case unnamed_copy(query, config, state) do
+      {:ok, copy} -> copy |> fun.() |> restore(query, comment, fn _ -> query end)
+      :error -> query |> with_comment(comment) |> fun.() |> restore(query, comment)
+    end
+  end
+
+  defp unnamed_copy(
+         %Postgrex.Query{name: name, statement: statement} = query,
+         %{mode: :full, traceparent: policy, trace_context: trace_context} = config,
+         state
+       )
+       when name != "" and policy in [:sampled, :always] do
+    with false <- locked?(state),
+         {:ok, %{sampled?: sampled?} = ctx} <- trace_context.current(),
+         true <- policy == :always or sampled? do
+      comment = Comment.build(config, ctx, named?: false)
+      {:ok, %{query | name: "", ref: nil, statement: Comment.prefix(statement, comment)}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp unnamed_copy(_query, _config, _state), do: :error
+
+  # Depends on Postgrex internals; see the moduledoc.
+  defp locked?(%{postgres: {_, _}}), do: true
+  defp locked?(_state), do: false
+
   defp unnamed?(%Postgrex.TextQuery{}), do: true
   defp unnamed?(%Postgrex.Query{name: ""}), do: true
   defp unnamed?(_query), do: false
 
-  defp restore(result, original, comment) do
+  defp restore(result, original, comment),
+    do: restore(result, original, comment, &restore_statement(&1, original))
+
+  defp restore(result, original, comment, on_query) do
     result
     |> Tuple.to_list()
-    |> Enum.map(&restore_element(&1, original))
+    |> Enum.map(fn
+      %Postgrex.Query{} = query -> on_query.(query)
+      %Postgrex.TextQuery{} = query -> on_query.(query)
+      element -> restore_element(element, original)
+    end)
     |> List.to_tuple()
     |> wrap(comment)
   end
 
-  defp restore_element(%{statement: _} = query, %{statement: statement}),
+  defp restore_statement(%{statement: _} = query, %{statement: statement}),
     do: %{query | statement: statement}
 
   defp restore_element(%Postgrex.Error{query: query} = error, %{statement: statement})

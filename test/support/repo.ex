@@ -18,3 +18,17 @@ defmodule EctoDatadogDbm.Test.PlainRepo do
     otp_app: :ecto_datadog_dbm,
     adapter: Ecto.Adapters.Postgres
 end
+
+defmodule EctoDatadogDbm.Test.SampledRepo do
+  @moduledoc false
+  use Ecto.Repo,
+    otp_app: :ecto_datadog_dbm,
+    adapter: Ecto.Adapters.Postgres
+end
+
+defmodule EctoDatadogDbm.Test.AlwaysRepo do
+  @moduledoc false
+  use Ecto.Repo,
+    otp_app: :ecto_datadog_dbm,
+    adapter: Ecto.Adapters.Postgres
+end
