@@ -101,20 +101,33 @@ every call. The `traceparent` option picks the trade-off:
   with the static comment. It only saves work if sampling is below 100%.
 - `:always`: every statement runs unnamed with the `traceparent`.
 
-Measured on loopback:
+## Performance
 
-| Case                                          | µs/op |
-| --------------------------------------------- | ----: |
-| named, no wrapper                             |  39.7 |
-| named, static prefix                          |  43.6 |
-| unnamed, changing prefix                      |  63.0 |
-| 6-join query, unnamed (re-planned every time) | 132.2 |
-| 6-join query, named                           |  36.7 |
+| Setting                            | On the wire                                    | Cost |
+| ---------------------------------- | ---------------------------------------------- | ---- |
+| `mode: :disabled`                  | nothing added                                  | none |
+| `mode: :service`, or `:full` with `:unnamed` (default) | static comment; `traceparent` only on already-unnamed statements | negligible: loopback 39.7 → 43.6 µs per query, no measurable difference over a 38 ms tunnel round trip |
+| `traceparent: :sampled`            | sampled executions run unnamed with `traceparent` | unnamed cost for sampled executions only; at 100% sampling equal to `:always` |
+| `traceparent: :always`             | every execution runs unnamed with `traceparent` | unnamed cost on every execution |
 
-`insert`/`update`/`delete` use Postgrex's statement cache: a changing comment makes
-each call Close + Parse, while a static one stays cached. Over a real network the
-unnamed cost is higher than on loopback. A differing leading comment does not change
-the `pg_stat_statements` `queryid`.
+The cost is not the comment but running a statement unnamed. Named statements are
+parsed and planned once per connection; unnamed ones are re-parsed and re-planned on
+every call. Over the tunnel an unnamed statement doubled latency (38 → 76 ms median,
+one extra round trip), with or without the wrapper. On loopback a simple unnamed query
+took 63.0 µs against 44 µs named, and a 6-join query 132.2 µs unnamed against 36.7 µs
+named: re-planning grows with query complexity. Extra planning CPU on the database was
+not measured.
+
+So the default links a trace only for statements that are already unnamed
+(`Repo.query`, `prepare: :unnamed`, `query_cache: false`); Ecto's ordinary named
+queries get service tags only. `:sampled` costs in proportion to the trace sampling
+rate. Use `:always` only if every query must link and re-planning your heaviest queries
+is acceptable. `insert`/`update`/`delete` use Postgrex's statement cache: a changing
+comment makes each call Close + Parse, so the default keeps the comment static.
+
+Not measured: production load, server CPU, the 6-join query over a real network, and
+`:always` in the sandbox. Benchmark your own workload before enabling `:always`. A
+differing leading comment does not change the `pg_stat_statements` `queryid`.
 
 ## Datadog setup
 
