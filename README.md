@@ -135,6 +135,63 @@ the `pg_stat_statements` `queryid`.
 - `opentelemetry_api` is optional; without it comments are service-only. Task support
   needs `opentelemetry_process_propagator`.
 
+## Verification against Datadog
+
+The released code was exercised from a scratch application (path dependency, two Repos
+with `pool: EctoDatadogDbm.Pool`, `mode: :full`, `dddbs`/`ddps` = the service's APM
+service name) against a DBM-enabled Postgres 18.3 host (`track_activity_query_size`
+4kB) monitored by the Datadog Agent, reached through an SSH tunnel. Only read-only
+`SELECT ... pg_sleep(3)` statements were run. The scratch app did not export traces, so
+the current span was built from the trace and span ids of real database spans of the
+service (taken from APM), via `:otel_tracer.from_remote_span/3`; the library read it
+through its OpenTelemetry trace context. Each policy ran three concurrent workers for
+3 to 4 minutes, issuing an unnamed statement (`Repo.query!`) and a named Ecto query per
+iteration. Results were read back from DBM activity samples.
+
+| Policy and span                 | Statement | Comment observed in the sample                | Sample linked to APM trace |
+| ------------------------------- | --------- | --------------------------------------------- | -------------------------- |
+| `:unnamed`, sampled (`01`)      | unnamed   | service tags + `traceparent=...-01`           | yes                        |
+| `:unnamed`, sampled (`01`)      | named     | service tags only                             | no trace, service tags only |
+| `:sampled`, sampled (`01`)      | named     | service tags + `traceparent=...-01`           | yes                        |
+| `:sampled`, sampled (`01`)      | unnamed   | service tags + `traceparent=...-01`           | yes                        |
+| `:sampled`, not sampled (`00`)  | named     | service tags only                             | no trace, service tags only |
+| `:sampled`, not sampled (`00`)  | unnamed   | service tags + `traceparent=...-00`           | sample carries flag `00`   |
+
+"Linked" means the sample's trace fields resolved: `mode` full, `sampled` true, the
+trace id equal to the injected one, and a `postgresql.query` span of the service with
+that id. About 170 samples were collected, covering six different real traces; every
+unnamed statement carried the `traceparent` of its own span, and no named statement
+ever carried one except the `:sampled` policy under a sampled span. The comment was
+at the start of the statement as expected. Phase boundaries were assigned by minute, so
+a few samples near a switch may be attributed to the neighbouring phase.
+
+Latency over the tunnel, `SELECT 1`, 500 runs per case interleaved round-robin
+(milliseconds):
+
+| Case                                               | median | p95    |
+| -------------------------------------------------- | -----: | -----: |
+| named, no wrapper                                  |  38.1  |  50.1  |
+| named, static prefix (`:unnamed` policy)           |  38.1  |  42.0  |
+| unnamed, no wrapper                                |  76.0  | 101.7  |
+| unnamed, changing `traceparent`                    |  76.1  | 102.0  |
+| named, sampled trace (`:sampled` policy)           |  76.1  |  96.4  |
+
+The round trip over the tunnel (about 38 ms) dominates everything else. The static
+prefix is free. An unnamed statement costs one extra round trip because it is parsed
+on every call; that is inherent to unnamed statements (the same without the wrapper),
+not an effect of the changing comment. Under `:sampled`, sampled executions pay that
+extra round trip and unsampled ones do not.
+
+Not verified: how the Datadog UI renders the link (only the sample fields were read),
+the backend join in the other direction (trace to samples), the `:always` policy,
+replicas, and behaviour at production load or with `track_activity_query_size` at its
+1024-byte default.
+
+Verdict: pass. Under both `:unnamed` and `:sampled`, DBM samples carried the comment
+and joined to the APM trace and span of the service named in `dddbs`; named statements
+kept a valid static comment; flag `00` was not promoted to a traceparent on named
+statements.
+
 ## Multiple Repos and replicas
 
 Share one keyword list so a primary and its replica are tagged alike:
